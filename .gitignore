@@ -1,9 +1,23 @@
+# --- Node / TypeScript (typescript/) ---
 node_modules
 dist
+coverage
 *.log
+
+# --- Python (python/) ---
+__pycache__/
+*.py[oc]
+venv
+.venv
+build
+*.egg-info
+*.egg
+
+# --- Secrets (both) ---
 .env
 .env.local
-coverage
+
+# --- Editors / OS ---
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
