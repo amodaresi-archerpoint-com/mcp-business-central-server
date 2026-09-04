@@ -4,6 +4,13 @@ dist
 coverage
 *.log
 
+# Reusable dev scripts live in typescript/scripts/ and ARE tracked. Do not put
+# them in dist/ — that directory is ignored wholesale, and git will not descend
+# into an excluded directory, so a `!dist/foo.mjs` negation cannot rescue them.
+# Ad-hoc scratch variants stay local:
+typescript/scripts/*.local.mjs
+typescript/scripts/*.local.js
+
 # --- Python (python/) ---
 __pycache__/
 *.py[oc]

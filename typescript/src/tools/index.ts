@@ -34,18 +34,24 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
 
 // ---------- discovery ----------
 
-function registerListCompanies(server: McpServer, { client }: ToolDeps): void {
+function registerListCompanies(
+  server: McpServer,
+  { client, config }: ToolDeps,
+): void {
   server.registerTool(
     "bc_list_companies",
     {
       title: "List BC Companies",
       description:
-        "List all companies in the connected Business Central environment. Returns company id, name, and displayName. Use this to discover valid values for the `company` parameter on other tools.",
+        "List all companies in the connected Business Central environment. Use this to discover valid values for the `company` parameter on other tools. On /api endpoints this returns id, name and displayName; on OData web service endpoints the records are returned as-is, because that entity uses different field names.",
       inputSchema: {},
     },
     async () => {
       try {
         const companies = await client.listCompanies();
+        // The ODataV4 `Company` set does not use the api/v2.0 field names, so
+        // projecting onto id/name/displayName there yields empty objects.
+        if (config.endpointStyle === "odata") return jsonResult(companies);
         return jsonResult(
           companies.map((c) => ({
             id: c.id,
@@ -69,7 +75,7 @@ function registerListEntitySets(
     {
       title: "List BC Entity Sets",
       description:
-        "List all entity set names available in this environment (e.g. customers, items, salesOrders). Use the result as the `entitySet` parameter on data tools.",
+        "List all entity set names available in this environment. On /api endpoints these are API pages (e.g. customers, items, salesOrders). On OData web services these are the Service Names registered on the Business Central Web Services page. Use the result as the `entitySet` parameter on data tools.",
       inputSchema: {},
     },
     async () => {
@@ -197,10 +203,14 @@ function registerGetEntity(server: McpServer, { client }: ToolDeps): void {
     {
       title: "Get BC Entity by ID",
       description:
-        "Fetch a single Business Central record by its primary key (typically a GUID).",
+        "Fetch a single Business Central record by its primary key. On /api endpoints the key is a systemId GUID. On OData web services the key is the page's ODataKeyFields — usually a quoted string, and composite keys are comma-separated.",
       inputSchema: {
         entitySet: z.string(),
-        id: z.string().describe("Primary key value (usually a GUID)."),
+        id: z
+          .string()
+          .describe(
+            "Primary key literal, inserted verbatim between parentheses. GUID on /api endpoints (e.g. 'a4bc6898-...'); an OData key literal on web services (e.g. \"'PRODUCTLISTING'\" or \"Code='X',Type='Y'\").",
+          ),
         select: z.array(z.string()).optional(),
         expand: z.array(z.string()).optional(),
         ...companyOptionSchema,
@@ -429,9 +439,13 @@ function registerInvokeAction(
         ensureWritesAllowed(config, "bc_invoke_action");
         ensureWriteConfirmed(config, "bc_invoke_action", confirm);
 
+        // API endpoints namespace bound actions as Microsoft.NAV.{name};
+        // OData web services use the shorter NAV.{name}.
+        const defaultNamespace =
+          config.endpointStyle === "odata" ? "NAV." : "Microsoft.NAV.";
         const actionSegment = action.includes(".")
           ? action
-          : `Microsoft.NAV.${action}`;
+          : `${defaultNamespace}${action}`;
         const path = id
           ? `${entitySet}(${id})/${actionSegment}`
           : `${entitySet}/${actionSegment}`;

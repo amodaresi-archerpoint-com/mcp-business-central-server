@@ -16,6 +16,8 @@
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke": "node scripts/smoke-test.mjs",
+    "query": "node scripts/query.mjs",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"
   },

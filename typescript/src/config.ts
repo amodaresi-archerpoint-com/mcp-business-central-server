@@ -3,16 +3,43 @@ import { z } from "zod";
 /**
  * BC URL shape detection.
  *
- * SaaS:    https://api.businesscentral.dynamics.com/v2.0/{tenant}/{environment}/api/{publisher}/{group}/{version}
- *          (or the standard /api/v2.0)
- * On-prem: https://{host}:{port}/{instance}/api/{publisher}/{group}/{version}
+ * Two endpoint families are supported, selected by `endpointStyle`:
  *
- * The user supplies the FULL base URL up to and including /api/.../{version}.
- * We don't try to construct it for them — too many on-prem variations.
+ * 1. "api" — API pages / API queries only.
+ *    SaaS:    https://api.businesscentral.dynamics.com/v2.0/{tenant}/{environment}/api/{publisher}/{group}/{version}
+ *             (or the standard /api/v2.0)
+ *    On-prem: https://{host}:{port}/{instance}/api/{publisher}/{group}/{version}
+ *    Company segment: companies({guid})
+ *
+ * 2. "odata" — anything published on the BC *Web Services* page (pages and
+ *    queries, plus codeunits as unbound actions). This reaches tables that have
+ *    no API page, including ISV and custom tables.
+ *    SaaS:    https://api.businesscentral.dynamics.com/v2.0/{tenant}/{environment}/ODataV4
+ *    On-prem: https://{host}:{port}/{instance}/ODataV4
+ *    Company segment: Company(Id={guid}) or Company('{Name}')
+ *
+ * The user supplies the FULL base URL up to and including /api/.../{version}
+ * or /ODataV4. We don't try to construct it for them — too many on-prem
+ * variations.
  */
 
 const AuthTypeSchema = z.enum(["oauth_client_credentials", "basic"]);
 export type AuthType = z.infer<typeof AuthTypeSchema>;
+
+const EndpointStyleSchema = z.enum(["api", "odata"]);
+export type EndpointStyle = z.infer<typeof EndpointStyleSchema>;
+
+/**
+ * Infer the endpoint family from the base URL. A URL containing an /ODataV4
+ * (or /OData) path segment is an OData web service root; everything else is
+ * assumed to be an API endpoint, which preserves the previous behaviour.
+ */
+export function detectEndpointStyle(
+  baseUrl: string | undefined,
+): EndpointStyle {
+  if (baseUrl && /\/odata(v4)?(\/|$)/i.test(baseUrl)) return "odata";
+  return "api";
+}
 
 const BaseConfigSchema = z.object({
   // The full BC API base URL up to and including the version segment.
@@ -23,7 +50,14 @@ const BaseConfigSchema = z.object({
 
   // Default company name or ID. Tools accept a `company` arg to override.
   // If neither is provided, list_companies must be called first.
+  // NOTE: for endpointStyle "odata" the company NAME is case-sensitive, and
+  // company listing is not available — prefer the company GUID, or copy the
+  // name exactly as it appears on BC's Companies page.
   defaultCompany: z.string().optional(),
+
+  // Which BC endpoint family baseUrl points at. Auto-detected from the URL;
+  // override with BC_ENDPOINT_STYLE when detection guesses wrong.
+  endpointStyle: EndpointStyleSchema.default("api"),
 
   authType: AuthTypeSchema,
 
@@ -79,9 +113,14 @@ export function loadConfigFromEnv(): Config {
     (env["BC_AUTH_TYPE"] as AuthType) ??
     (env["BC_CLIENT_ID"] ? "oauth_client_credentials" : "basic");
 
+  const baseUrl = env["BC_URL_SERVER"] ?? env["BC_BASE_URL"];
+
   const common = {
-    baseUrl: env["BC_URL_SERVER"] ?? env["BC_BASE_URL"],
+    baseUrl,
     defaultCompany: env["BC_COMPANY"],
+    endpointStyle:
+      (env["BC_ENDPOINT_STYLE"] as EndpointStyle | undefined) ??
+      detectEndpointStyle(baseUrl),
     readOnly: parseBool(env["BC_READ_ONLY"]) ?? false,
     requireWriteConfirmation:
       parseBool(env["BC_REQUIRE_WRITE_CONFIRMATION"]) ?? true,

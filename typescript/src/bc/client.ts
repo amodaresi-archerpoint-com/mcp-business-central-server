@@ -1,19 +1,57 @@
 import { Agent, request } from "undici";
-import type { Config } from "../config.js";
+import type { Config, EndpointStyle } from "../config.js";
 import type { AuthProvider } from "./auth/types.js";
 import { BCError, parseBCError } from "./errors.js";
 import { buildQueryString, type ODataQueryOptions } from "./odata.js";
 
 export interface BCRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
-  path: string; // path AFTER baseUrl, AFTER companies(...)/ if companyScoped
+  path: string; // path AFTER baseUrl, AFTER the company segment if companyScoped
   query?: ODataQueryOptions;
   body?: unknown;
   ifMatch?: string; // ETag for PATCH/DELETE
-  /** If true, prefix path with /companies({companyId})/. Default true. */
+  /** If true, prefix path with the company segment. Default true. */
   companyScoped?: boolean;
   /** Override the default company. Accepts company ID (GUID) or name. */
   company?: string;
+}
+
+/**
+ * Build the company URL segment for the configured endpoint family.
+ *
+ * "api"   -> companies({guid})            — keyed by systemId GUID
+ * "odata" -> Company(Id={guid})           — preferred: the ID is immutable
+ *            Company('{Name}')            — fallback: name is case-sensitive
+ *
+ * For the name form, embedded single quotes are doubled per OData rules and
+ * the name is percent-encoded (spaces and commas are common in BC company
+ * names, e.g. "CRONUS USA, Inc." -> CRONUS%20USA%2C%20Inc.). Note that
+ * encodeURIComponent leaves ' unescaped, so the doubled quotes remain literal
+ * in the URL — which is the form OData expects.
+ */
+export function companySegment(
+  style: EndpointStyle,
+  company: string,
+): string {
+  if (style === "api") return `companies(${company})`;
+  if (isGuid(company)) return `Company(Id=${company})`;
+  const name = decodeIfEncoded(company);
+  return `Company('${encodeURIComponent(name.replace(/'/g, "''"))}')`;
+}
+
+/**
+ * Company names are commonly copied out of a browser address bar, arriving
+ * already percent-encoded ("AP%20V28%20Test"). Encoding that again would send
+ * "AP%2520V28%2520Test", so decode first to keep the operation idempotent.
+ */
+function decodeIfEncoded(value: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(value)) return value;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    // Malformed escape sequence — treat the value as a literal name.
+    return value;
+  }
 }
 
 export interface BCEntity {
@@ -21,16 +59,22 @@ export interface BCEntity {
   [key: string]: unknown;
 }
 
+/**
+ * Shaped after the /api/v2.0 `companies` entity. The ODataV4 `Company` set
+ * uses different field names, so extra keys are preserved and callers on that
+ * endpoint should read the record as-is rather than these named fields.
+ */
 export interface BCCompany {
-  id: string;
+  id?: string;
   systemVersion?: string;
-  name: string;
+  name?: string;
   displayName?: string;
   businessProfileId?: string;
   systemCreatedAt?: string;
   systemCreatedBy?: string;
   systemModifiedAt?: string;
   systemModifiedBy?: string;
+  [key: string]: unknown;
 }
 
 export class BCClient {
@@ -169,12 +213,26 @@ export class BCClient {
    * to a parent company themselves.
    */
   async listCompanies(): Promise<BCCompany[]> {
-    const result = await this.fetch<{ value: BCCompany[] }>({
-      method: "GET",
-      path: "companies",
-      companyScoped: false,
-    });
-    return result?.value ?? [];
+    const odata = this.config.endpointStyle === "odata";
+    try {
+      const result = await this.fetch<{ value: BCCompany[] }>({
+        method: "GET",
+        path: odata ? "Company" : "companies",
+        companyScoped: false,
+      });
+      return result?.value ?? [];
+    } catch (err) {
+      if (odata) {
+        throw new Error(
+          "Could not list companies from the ODataV4 endpoint. Unlike /api/v2.0, " +
+            "the OData root does not reliably expose a company collection. Set " +
+            "BC_COMPANY to the company GUID (preferred — it is immutable) or to the " +
+            "exact, case-sensitive name shown on the Companies page in Business Central. " +
+            `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      throw err;
+    }
   }
 
   /**
@@ -188,7 +246,10 @@ export class BCClient {
       const companies = await this.listCompanies();
       this.companyIdCache = new Map();
       for (const c of companies) {
-        this.companyIdCache.set(c.name, c.id);
+        // id/name are optional on BCCompany because the OData `Company` set
+        // uses different field names; this path only runs for /api endpoints.
+        if (!c.id) continue;
+        if (c.name) this.companyIdCache.set(c.name, c.id);
         if (c.displayName) this.companyIdCache.set(c.displayName, c.id);
       }
     }
@@ -235,8 +296,14 @@ export class BCClient {
             "Use the bc_list_companies tool to find one.",
         );
       }
-      const companyId = await this.resolveCompanyId(company);
-      path = `companies(${companyId})/${path}`;
+      if (this.config.endpointStyle === "odata") {
+        // The ODataV4 root has no `companies` set to resolve names against, so
+        // the supplied value is used as-is (GUID preferred, else exact name).
+        path = `${companySegment("odata", company)}/${path}`;
+      } else {
+        const companyId = await this.resolveCompanyId(company);
+        path = `${companySegment("api", companyId)}/${path}`;
+      }
     }
 
     const qs = opts.query ? buildQueryString(opts.query) : "";

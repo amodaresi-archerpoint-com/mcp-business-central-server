@@ -29,7 +29,7 @@ export const companyOptionSchema = {
     .string()
     .optional()
     .describe(
-      "Company name or GUID. If omitted, the server's default company is used.",
+      "Company name or GUID. If omitted, the server's default company is used. On OData web service endpoints the name is case-sensitive and is not resolved server-side, so the GUID is safer.",
     ),
 };
 
