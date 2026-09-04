@@ -1,14 +1,9 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-
-# Virtual and local environments
-venv
+node_modules
 dist
+*.log
 .env
-.venv
-
-# Build artifacts
-build
-*.egg-info
-*.egg
+.env.local
+coverage
+.DS_Store
+.vscode/*
+!.vscode/extensions.json

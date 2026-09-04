@@ -1,0 +1,47 @@
+{
+  "name": "bc-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for Microsoft Dynamics 365 Business Central (SaaS + on-prem) with OAuth, OData, bound actions, and read-only safety mode.",
+  "type": "module",
+  "bin": {
+    "bc-mcp-server": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "start:http": "node dist/index.js --transport=http --port=3000",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "business-central",
+    "dynamics-365",
+    "erp",
+    "claude"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "express": "^4.21.2",
+    "undici": "^7.10.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

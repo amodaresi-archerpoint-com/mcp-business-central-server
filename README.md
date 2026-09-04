@@ -1,164 +1,114 @@
-# Business Central MCP Server
+# bc-mcp-server
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+A TypeScript MCP server for Microsoft Dynamics 365 Business Central. Designed to improve on the existing Python `mcp-business-central-server` with:
 
-A lightweight MCP Server for seamless integration with Microsoft Dynamics 365 Business Central, enabling MCP clients to interact with any entity in your Business Central environment. Developed by [sofias tech](https://github.com/xxx/mcp-business-central-server/).
+- **OAuth 2.0 client credentials** (S2S) and Basic auth.
+- **Full OData v4 query support** (`$filter`, `$select`, `$expand`, `$orderby`, `$top`, `$skip`, `$count`).
+- **Bound action invocation** (post documents, ship & invoice, approve, etc.).
+- **Metadata caching** with configurable TTL.
+- **Read-only mode + write confirmation** for safer agent usage.
+- **Multi-company** — pass `company` per tool call, or set a default.
+- **stdio + Streamable HTTP** transports.
+- Targets **BC SaaS and on-prem** (you supply the base URL).
 
-## Features
-
-This server provides a clean interface to Business Central resources through the Model Context Protocol (MCP), with optimized HTTP request handling for improved performance.
-
-### Tools
-
-The server implements the following tools:
-
-- `BC_Get_Schema`: Retrieves the schema of any Business Central entity including available fields
-- `BC_List_Items`: Fetches a list of entities with optional filtering and pagination
-- `BC_Get_Items_By_Field`: Searches for entities based on a specific field value
-- `BC_Create_Item`: Creates a new entity record in Business Central
-- `BC_Update_Item`: Updates an existing entity record
-- `BC_Delete_Item`: Removes an entity record from Business Central
-
-## Working with Business Central Entities
-
-This server can work with any entity (table) in Business Central. When using the tools, you must provide the exact entity name as it appears in Business Central. For example:
-
-- `Employees`
-- `Customers`
-- `Items`
-- `Vendors`
-- `SalesOrders`
-- `Payments`
-
-The entity name is case-sensitive and must match exactly what Business Central exposes through its API.
-
-## Architecture
-
-The server is built with resource efficiency in mind:
-
-- Clear separation between resource management and tool implementation
-- Simple and maintainable codebase with minimal code duplication
-- Direct HTTP request handling using requests library
-
-## Setup
-
-1. Create API credentials for Business Central
-2. Configure your Business Central environment and company information
-3. Set up the required environment variables
-
-## Environment Variables
-
-The server requires these environment variables:
-
-- `BC_URL_SERVER`: Your Business Central API server URL (e.g., "https://api.businesscentral.dynamics.com/v2.0/tenant/api/v2.0")
-- `BC_USER`: Your Business Central API username
-- `BC_PASS`: Your Business Central API password
-- `BC_COMPANY`: The name of your Business Central company
-
-## Quickstart
-
-### Installation
+## Install
 
 ```bash
-pip install -e .
+git clone <your-fork-url> bc-mcp-server
+cd bc-mcp-server
+npm install
+npm run build
 ```
 
-Or install from PyPI once published:
+## Configure
+
+Copy `.env.example` to `.env` and fill in credentials. The minimum for SaaS with OAuth:
+
+```
+BC_BASE_URL=https://api.businesscentral.dynamics.com/v2.0/{tenant-id}/Production/api/v2.0
+BC_COMPANY=CRONUS USA, Inc.
+BC_AUTH_TYPE=oauth_client_credentials
+BC_TENANT_ID=...
+BC_CLIENT_ID=...
+BC_CLIENT_SECRET=...
+```
+
+For on-prem with Basic auth:
+
+```
+BC_BASE_URL=https://bc.contoso.local:7048/BC/api/v2.0
+BC_COMPANY=CRONUS International Ltd.
+BC_AUTH_TYPE=basic
+BC_USER=...
+BC_PASS=...
+BC_REJECT_UNAUTHORIZED=false   # only if self-signed cert
+```
+
+## Run
+
+**stdio (Claude Desktop, MCP Inspector, etc.):**
 
 ```bash
-pip install mcp-business-central-server
+npm run start
 ```
 
-Using uv:
+**Streamable HTTP:**
 
 ```bash
-uv pip install mcp-business-central-server
+npm run start:http
+# POST/GET/DELETE on http://127.0.0.1:3000/mcp
 ```
 
-### Claude Desktop Integration
+**Inspect with the official inspector:**
 
-To integrate with Claude Desktop, update the configuration file:
+```bash
+npm run inspect
+```
 
-On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
-On macOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
-
-#### Standard Integration
+## Claude Desktop config
 
 ```json
-"mcpServers": {
-  "businesscentral": {
-    "command": "mcp-business-central-server",
-    "env": {
-      "BC_URL_SERVER": "your-bc-api-url",
-      "BC_USER": "your-bc-username",
-      "BC_PASS": "your-bc-password",
-      "BC_COMPANY": "your-bc-company"
+{
+  "mcpServers": {
+    "businesscentral": {
+      "command": "node",
+      "args": ["/absolute/path/to/bc-mcp-server/dist/index.js"],
+      "env": {
+        "BC_BASE_URL": "...",
+        "BC_COMPANY": "...",
+        "BC_AUTH_TYPE": "oauth_client_credentials",
+        "BC_TENANT_ID": "...",
+        "BC_CLIENT_ID": "...",
+        "BC_CLIENT_SECRET": "..."
+      }
     }
   }
 }
 ```
 
-#### Using uvx
+## Tools
 
-```json
-"mcpServers": {
-  "businesscentral": {
-    "command": "uvx",
-    "args": [
-      "mcp-business-central-server"
-    ],
-    "env": {
-      "BC_URL_SERVER": "your-bc-api-url",
-      "BC_USER": "your-bc-username",
-      "BC_PASS": "your-bc-password",
-      "BC_COMPANY": "your-bc-company"
-    }
-  }
-}
-```
+| Tool | Purpose |
+| --- | --- |
+| `bc_list_companies` | Discover company names/IDs in this environment. |
+| `bc_list_entity_sets` | List all entity sets exposed via the API. |
+| `bc_get_entity_schema` | Fields, keys, navigation properties, bound actions. |
+| `bc_list_entities` | Query records with full OData support. |
+| `bc_get_entity` | Fetch one record by ID. |
+| `bc_find_entities_by_field` | Safe equality search by single field. |
+| `bc_create_entity` | Create a record. (write) |
+| `bc_update_entity` | Update by ID, supports `If-Match` ETags. (write) |
+| `bc_delete_entity` | Delete by ID, supports `If-Match` ETags. (write) |
+| `bc_invoke_action` | Call a bound or unbound OData action. (write) |
 
-## Development
+Write tools are gated by `BC_READ_ONLY` (hard disable) and `BC_REQUIRE_WRITE_CONFIRMATION` (require `confirm: true` per call).
 
-### Requirements
-
-- Python 3.10+
-- Dependencies listed in `requirements.txt` and `pyproject.toml`
-
-### Local Development
-
-1. Clone the repository
-2. Create a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-3. Install development dependencies:
-   ```bash
-   pip install -e .
-   ```
-4. Create a `.env` file with your Business Central credentials:
-   ```
-   BC_URL_SERVER=your-bc-api-url
-   BC_USER=your-bc-username
-   BC_PASS=your-bc-password
-   BC_COMPANY=your-bc-company
-   ```
-5. Run the server:
-   ```bash
-   python -m mcp_bc_server
-   ```
-
-### Debugging
-
-For debugging the MCP server, you can use the [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
+## Tests
 
 ```bash
-npx @modelcontextprotocol/inspector -- python -m mcp_bc_server
+npm test
 ```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-Copyright (c) 2025 sofias tech
-
+MIT.
