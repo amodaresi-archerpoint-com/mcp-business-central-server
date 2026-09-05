@@ -194,11 +194,24 @@ npm run inspect
 }
 ```
 
-## Claude Code config (shared, committed)
+## Claude Code config
 
-Claude Code reads a project-scoped `.mcp.json` from the repository root, and that file **is
-committed and shared with the team** — so expand secrets from the environment rather than inlining
-them. It supports `${VAR}` and `${VAR:-default}` in `command`, `args`, `env`, `url` and `headers`.
+For an individual setup, register it at **user scope** — it lands in `~/.claude.json`, so nothing
+touches the consuming repository and each person uses their own client secret:
+
+```bash
+claude mcp add bc-odata -s user -e BC_AUTH_TYPE=oauth_client_credentials -e BC_TENANT_ID=... \
+  -e BC_CLIENT_ID=... -e BC_CLIENT_SECRET=... -e BC_BASE_URL=... -e BC_COMPANY=... \
+  -e BC_READ_ONLY=true -- node /path/to/typescript/dist/index.js
+```
+
+### Shared, committed alternative
+
+Claude Code also reads a project-scoped `.mcp.json` from the consuming repository's root (**not**
+from `.claude/` — that path is silently ignored). That file **is committed and shared with the
+team**, so expand secrets from the environment rather than inlining them. It supports `${VAR}` and
+`${VAR:-default}` in `command`, `args`, `env`, `url` and `headers`. Prefer this only when the whole
+team should share one credential; otherwise use user scope above.
 
 ```json
 {
